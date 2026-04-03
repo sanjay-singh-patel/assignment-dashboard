@@ -250,8 +250,8 @@ with c14:
     fig.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10), coloraxis_showscale=False)
     st.plotly_chart(fig, use_container_width=True)
 
-# ── Row 11: Retail Customer Zone Analysis ────────────────────────────────────
-st.subheader("🛒 Retail Customer Analysis by Zone")
+# ── Row 11: Retailers Zone Analysis ────────────────────────────────────
+st.subheader("🛒 Retailers Analysis by Zone")
 retail_df = fdf[fdf['Customer Category'] == 'Retailer']
 
 c15, c16, c17 = st.columns(3)
