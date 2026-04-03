@@ -1,304 +1,255 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
-# -------------------- CONFIG --------------------
-st.set_page_config(page_title="Sales Dashboard", layout="wide")
+st.set_page_config(page_title="Kessebohmer Sales Dashboard", layout="wide", page_icon="📊")
 
-# -------------------- LOAD DATA --------------------
-# Replace with your file
-df = pd.read_excel("data/Test Data 22 Intern (1).xlsx")
+st.markdown("""
+<style>
+    .metric-card { background: #1e1e2e; border-radius: 10px; padding: 16px; text-align: center; }
+    .block-container { padding-top: 1.5rem; }
+</style>
+""", unsafe_allow_html=True)
 
-# -------------------- DATA CLEANING --------------------
-df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-df['Year'] = df['Date'].dt.year
-df['Month'] = df['Date'].dt.month_name()
-df['Quarter'] = df['Date'].dt.to_period('Q').astype(str)
+# ── Load ──────────────────────────────────────────────────────────────────────
+@st.cache_data
+def load():
+    df = pd.read_excel("data/Test Data 22 Intern (1).xlsx")
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    df['Sales value'] = pd.to_numeric(df['Sales value'], errors='coerce').fillna(0)
+    df['Product Category 1'] = df['Product Category 1'].fillna("Uncategorised")
+    df['Customer Category'] = df['Customer Category'].fillna("Unknown")
+    return df
 
-# Ensure numeric
-df['Sales value'] = pd.to_numeric(df['Sales value'], errors='coerce').fillna(0)
+df = load()
 
-# -------------------- SIDEBAR FILTERS --------------------
-st.sidebar.header("🔍 Filters")
+# ── Sidebar Filters ───────────────────────────────────────────────────────────
+with st.sidebar:
+    st.title("🔍 Filters")
+    zone_filter = st.multiselect("Zone", sorted(df['Zone'].dropna().unique()), default=sorted(df['Zone'].dropna().unique()))
+    quarter_filter = st.multiselect("Quarter", sorted(df['Quarter'].dropna().unique()), default=sorted(df['Quarter'].dropna().unique()))
+    cat_filter = st.multiselect("Customer Category", sorted(df['Customer Category'].dropna().unique()), default=sorted(df['Customer Category'].dropna().unique()))
+    rep_filter = st.multiselect("External Sales Rep", sorted(df['External Sales Representative'].dropna().unique()), default=sorted(df['External Sales Representative'].dropna().unique()))
 
-year_filter = st.sidebar.multiselect(
-    "Year",
-    options=sorted(df['Year'].dropna().unique()),
-    default=sorted(df['Year'].dropna().unique())
-)
-
-zone_filter = st.sidebar.multiselect(
-    "Zone",
-    options=df['Zone'].dropna().unique(),
-    default=df['Zone'].dropna().unique()
-)
-
-state_filter = st.sidebar.multiselect(
-    "State",
-    options=df['State'].dropna().unique(),
-    default=df['State'].dropna().unique()
-)
-
-rep_filter = st.sidebar.multiselect(
-    "External Sales Rep",
-    options=df['External Sales Representative'].dropna().unique(),
-    default=df['External Sales Representative'].dropna().unique()
-)
-
-# -------------------- FILTER DATA --------------------
-filtered_df = df[
-    (df['Year'].isin(year_filter)) &
-    (df['Zone'].isin(zone_filter)) &
-    (df['State'].isin(state_filter)) &
-    (df['External Sales Representative'].isin(rep_filter))
+fdf = df[
+    df['Zone'].isin(zone_filter) &
+    df['Quarter'].isin(quarter_filter) &
+    df['Customer Category'].isin(cat_filter) &
+    df['External Sales Representative'].isin(rep_filter)
 ]
 
-# -------------------- KPIs --------------------
-total_sales = filtered_df['Sales value'].sum()
-pending_bills = filtered_df[filtered_df['Sales value'] < 0]['Sales value'].sum()
+pos = fdf[fdf['Sales value'] > 0]
 
-TARGET = 650000000
-achievement = (total_sales / TARGET) * 100 if TARGET else 0
+# ── KPIs ──────────────────────────────────────────────────────────────────────
+TARGET = 650_000_000
+total_sales = pos['Sales value'].sum()
+credit_notes = fdf[fdf['Sales value'] < 0]['Sales value'].sum()
+net_sales = fdf['Sales value'].sum()
+num_customers = fdf['Customer Name'].nunique()
+num_invoices = fdf['Invoice No.'].nunique()
+achievement = (total_sales / TARGET) * 100
 
-# -------------------- TITLE --------------------
-st.title("📊 SALES DASHBOARD")
+st.title("📊 Kessebohmer Sales Dashboard — 2022")
+st.caption(f"Showing **{len(fdf):,}** transactions · **{num_customers}** customers · **{num_invoices}** invoices")
 
-# -------------------- KPI GRID --------------------
-k1, k2, k3, k4 = st.columns(4)
+k1, k2, k3, k4, k5 = st.columns(5)
+k1.metric("Gross Sales", f"₹{total_sales/1e6:.1f}M")
+k2.metric("Net Sales", f"₹{net_sales/1e6:.1f}M")
+k3.metric("Credit Notes", f"₹{credit_notes/1e6:.1f}M")
+k4.metric("Target", f"₹{TARGET/1e6:.0f}M")
+k5.metric("Achievement", f"{achievement:.1f}%", delta=f"{achievement-100:.1f}%")
 
-k1.metric("Sales Value", f"{total_sales:,.0f}")
-k2.metric("Pending Bills", f"{pending_bills:,.0f}")
-k3.metric("Target", f"{TARGET:,.0f}")
-k4.metric("Achievement %", f"{achievement:.2f}%")
-# print(filtered_df)
-# -------------------- CHART DATA --------------------
-yearly = filtered_df.groupby('Year')['Sales value'].sum().reset_index()
-quarterly = filtered_df.groupby('Quarter')['Sales value'].sum().reset_index()
-zone_sales = filtered_df.groupby('Zone')['Sales value'].sum().reset_index()
-rep_sales = filtered_df.groupby('External Sales Representative')['Sales value'].sum().reset_index()
-product_sales = filtered_df.groupby('Product Category 1')['Sales value'].sum().reset_index()
+st.divider()
 
-# -------------------- CHARTS --------------------
-fig_year = px.bar(yearly, x='Year', y='Sales value', title="Yearly Sales")
-fig_quarter = px.pie(quarterly, names='Quarter', values='Sales value', title="Quarterly Sales")
-fig_zone = px.bar(zone_sales, x='Zone', y='Sales value', color='Zone', title="Zonal Sales")
-fig_rep = px.bar(rep_sales.sort_values(by='Sales value', ascending=False),
-                 x='External Sales Representative', y='Sales value',
-                 title="Sales by Representative")
-fig_product = px.bar(product_sales.sort_values(by='Sales value', ascending=False),
-                     x='Product Category 1', y='Sales value',
-                     title="Product Sales")
-
-# -------------------- STYLE --------------------
-def style_chart(fig):
-    fig.update_layout(
-        margin=dict(l=10, r=10, t=40, b=10),
-        height=320
-    )
-    return fig
-
-fig_year = style_chart(fig_year)
-fig_quarter = style_chart(fig_quarter)
-fig_zone = style_chart(fig_zone)
-fig_rep = style_chart(fig_rep)
-fig_product = style_chart(fig_product)
-
-# -------------------- GRID LAYOUT --------------------
-
-# Row 1 → Big + 2 small (like PDF)
-c1, c2, c3 = st.columns([2, 1, 1])
+# ── Row 1: Monthly Trend + Quarterly Split ────────────────────────────────────
+c1, c2 = st.columns([3, 1])
 
 with c1:
-    st.plotly_chart(fig_year, use_container_width=True)
+    monthly = fdf.groupby(fdf['Date'].dt.to_period('M'))['Sales value'].sum().reset_index()
+    monthly['Month'] = monthly['Date'].astype(str)
+    fig = px.area(monthly, x='Month', y='Sales value',
+                  title="📈 Monthly Sales Trend",
+                  color_discrete_sequence=['#636EFA'])
+    fig.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10), xaxis_title="", yaxis_title="Sales (₹)")
+    st.plotly_chart(fig, use_container_width=True)
 
 with c2:
-    st.plotly_chart(fig_quarter, use_container_width=True)
+    q_sales = fdf.groupby('Quarter')['Sales value'].sum().reset_index()
+    fig = px.pie(q_sales, names='Quarter', values='Sales value',
+                 title="🗓 Quarterly Split", hole=0.45,
+                 color_discrete_sequence=px.colors.qualitative.Pastel)
+    fig.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10))
+    st.plotly_chart(fig, use_container_width=True)
+
+# ── Row 2: Zone Sales + Customer Category ─────────────────────────────────────
+c3, c4 = st.columns(2)
 
 with c3:
-    st.plotly_chart(fig_zone, use_container_width=True)
-
-# Row 2 → 2 equal charts
-c4, c5 = st.columns(2)
+    zone_sales = fdf.groupby('Zone')['Sales value'].sum().reset_index().sort_values('Sales value', ascending=True)
+    fig = px.bar(zone_sales, x='Sales value', y='Zone', orientation='h',
+                 title="🗺 Sales by Zone", color='Zone',
+                 color_discrete_sequence=px.colors.qualitative.Set2)
+    fig.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10), showlegend=False, xaxis_title="Sales (₹)", yaxis_title="")
+    st.plotly_chart(fig, use_container_width=True)
 
 with c4:
-    st.plotly_chart(fig_rep, use_container_width=True)
+    cust_cat = fdf.groupby('Customer Category')['Sales value'].sum().reset_index()
+    fig = px.pie(cust_cat, names='Customer Category', values='Sales value',
+                 title="🏷 Revenue by Customer Category", hole=0.4,
+                 color_discrete_sequence=px.colors.qualitative.Bold)
+    fig.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10))
+    st.plotly_chart(fig, use_container_width=True)
+
+# ── Row 3: Product Category + Product Main ────────────────────────────────────
+c5, c6 = st.columns(2)
 
 with c5:
-    st.plotly_chart(fig_product, use_container_width=True)
+    prod1 = fdf.groupby('Product Category 1')['Sales value'].sum().reset_index().sort_values('Sales value', ascending=True)
+    fig = px.bar(prod1, x='Sales value', y='Product Category 1', orientation='h',
+                 title="📦 Sales by Product Category",
+                 color='Sales value', color_continuous_scale='Blues')
+    fig.update_layout(height=380, margin=dict(l=10, r=10, t=40, b=10), yaxis_title="", xaxis_title="Sales (₹)", coloraxis_showscale=False)
+    st.plotly_chart(fig, use_container_width=True)
 
-# -------------------- EXTRA SECTION --------------------
-st.subheader("📉 Negative Sales (Credit Notes)")
-st.dataframe(filtered_df[filtered_df['Sales value'] < 0])
+with c6:
+    prod_main = fdf[fdf['Product Main'] != '-'].groupby('Product Main')['Sales value'].sum().reset_index()
+    prod_main = prod_main.sort_values('Sales value', ascending=False).head(15)
+    fig = px.bar(prod_main, x='Sales value', y='Product Main', orientation='h',
+                 title="🔩 Top 15 Product Lines",
+                 color='Sales value', color_continuous_scale='Teal')
+    fig.update_layout(height=380, margin=dict(l=10, r=10, t=40, b=10), yaxis_title="", xaxis_title="Sales (₹)", coloraxis_showscale=False)
+    st.plotly_chart(fig, use_container_width=True)
 
-# -------------------- TOP PERFORMERS --------------------
-st.subheader("🏆 Top Sales Representatives")
+# ── Row 4: Zone × Product Heatmap ─────────────────────────────────────────────
+st.subheader("🔥 Zone × Product Category Heatmap")
+pivot = pd.pivot_table(fdf, values='Sales value', index='Product Category 1',
+                       columns='Zone', aggfunc='sum', fill_value=0)
+fig = px.imshow(pivot, text_auto='.2s', aspect='auto',
+                color_continuous_scale='RdYlGn',
+                title="Sales Value (₹) — Product vs Zone")
+fig.update_layout(height=420, margin=dict(l=10, r=10, t=40, b=10))
+st.plotly_chart(fig, use_container_width=True)
 
-top_sales = rep_sales.sort_values(by='Sales value', ascending=False).head(10)
+# ── Row 5: Top Sales Reps + Rep Efficiency ────────────────────────────────────
+c7, c8 = st.columns(2)
 
-fig_top = px.bar(top_sales,
-                 x='Sales value',
-                 y='External Sales Representative',
-                 orientation='h',
-                 title="Top 10 Sales Reps")
+with c7:
+    rep_sales = fdf.groupby('External Sales Representative')['Sales value'].sum().reset_index()
+    top10 = rep_sales.sort_values('Sales value', ascending=True).tail(10)
+    fig = px.bar(top10, x='Sales value', y='External Sales Representative', orientation='h',
+                 title="🏆 Top 10 Sales Representatives",
+                 color='Sales value', color_continuous_scale='Viridis')
+    fig.update_layout(height=360, margin=dict(l=10, r=10, t=40, b=10), yaxis_title="", coloraxis_showscale=False)
+    st.plotly_chart(fig, use_container_width=True)
 
-st.plotly_chart(style_chart(fig_top), use_container_width=True)
+with c8:
+    rep_eff = fdf.groupby('External Sales Representative').agg(
+        Sales=('Sales value', 'sum'),
+        Invoices=('Invoice No.', 'nunique')
+    ).reset_index()
+    rep_eff['Avg per Invoice'] = rep_eff['Sales'] / rep_eff['Invoices'].replace(0, 1)
+    fig = px.scatter(rep_eff, x='Invoices', y='Sales', size='Avg per Invoice',
+                     hover_name='External Sales Representative',
+                     title="🎯 Rep Efficiency (Sales vs Invoice Volume)",
+                     color='Sales', color_continuous_scale='Plasma')
+    fig.update_layout(height=360, margin=dict(l=10, r=10, t=40, b=10), coloraxis_showscale=False)
+    st.plotly_chart(fig, use_container_width=True)
 
-top5 = rep_sales.nlargest(5, 'Sales value')
-bottom5 = rep_sales.nsmallest(5, 'Sales value')
-st.subheader("📌 Top 5 Sales Representatives")
-st.table(top5)
-st.subheader("📌 Bottom 5 Sales Representatives")
-st.table(bottom5)
+# ── Row 6: Pareto (Customer Revenue Concentration) ───────────────────────────
+st.subheader("📊 Customer Revenue Concentration (Pareto)")
+cust_sales = fdf.groupby('Customer Name')['Sales value'].sum().sort_values(ascending=False).reset_index()
+cust_sales['Cumulative %'] = cust_sales['Sales value'].cumsum() / cust_sales['Sales value'].sum() * 100
 
-
-st.subheader("📊 Customer Revenue Concentration (Pareto Analysis)")
-
-customer_sales = df.groupby('Customer Name')['Sales value'].sum().sort_values(ascending=False).reset_index()
-customer_sales['Cumulative %'] = customer_sales['Sales value'].cumsum() / customer_sales['Sales value'].sum() * 100
-
-fig = px.bar(customer_sales, x='Customer Name', y='Sales value', title="Customer Sales")
-
-fig.add_scatter(
-    x=customer_sales['Customer Name'],
-    y=customer_sales['Cumulative %'],
-    mode='lines',
-    name='Cumulative %',
-    yaxis='y2'
-)
-
+fig = go.Figure()
+fig.add_bar(x=cust_sales['Customer Name'], y=cust_sales['Sales value'],
+            name='Sales', marker_color='#636EFA')
+fig.add_scatter(x=cust_sales['Customer Name'], y=cust_sales['Cumulative %'],
+                mode='lines', name='Cumulative %', yaxis='y2',
+                line=dict(color='#EF553B', width=2))
 fig.update_layout(
-    yaxis2=dict(overlaying='y', side='right', title='Cumulative %')
+    height=380, margin=dict(l=10, r=10, t=40, b=10),
+    yaxis=dict(title='Sales (₹)'),
+    yaxis2=dict(title='Cumulative %', overlaying='y', side='right', range=[0, 105]),
+    xaxis=dict(showticklabels=False, title='Customers (sorted by revenue)'),
+    legend=dict(orientation='h', y=1.1)
 )
-
 st.plotly_chart(fig, use_container_width=True)
 
+# ── Row 7: Treemap + State Choropleth ─────────────────────────────────────────
+c9, c10 = st.columns([3, 2])
 
+with c9:
+    fig = px.treemap(fdf, path=['Zone', 'Product Category 1'],
+                     values='Sales value',
+                     title="🍩 Revenue Contribution — Zone → Product",
+                     color='Sales value', color_continuous_scale='RdBu')
+    fig.update_layout(height=400, margin=dict(l=10, r=10, t=40, b=10))
+    st.plotly_chart(fig, use_container_width=True)
+
+with c10:
+    state_sales = fdf.groupby('State')['Sales value'].sum().reset_index().sort_values('Sales value', ascending=False).head(15)
+    fig = px.bar(state_sales, x='Sales value', y='State', orientation='h',
+                 title="🗾 Top 15 States by Revenue",
+                 color='Sales value', color_continuous_scale='Oranges')
+    fig.update_layout(height=400, margin=dict(l=10, r=10, t=40, b=10), yaxis_title="", coloraxis_showscale=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+# ── Row 8: Customer Segmentation Bubble ───────────────────────────────────────
 st.subheader("🫧 Customer Segmentation")
-
-cust_seg = df.groupby('Customer Name').agg({
-    'Sales value': 'sum',
-    'Quantity': 'sum',
-    'Invoice No.': 'count'
-}).reset_index()
-
-cust_seg['Type'] = cust_seg['Sales value'].apply(lambda x: 'Positive' if x >= 0 else 'Negative')
-
-cust_seg['Quantity_abs'] = cust_seg['Quantity'].abs()
-
-fig = px.scatter(
-    cust_seg,
-    x='Invoice No.',
-    y='Sales value',
-    size='Quantity_abs',
-    color='Type',
-    hover_name='Customer Name',
-    title="Customer Segmentation (Positive vs Negative)"
-)
-
+cust_seg = fdf.groupby(['Customer Name', 'Customer Category']).agg(
+    Sales=('Sales value', 'sum'),
+    Qty=('Quantity', 'sum'),
+    Invoices=('Invoice No.', 'nunique')
+).reset_index()
+cust_seg['Qty_abs'] = cust_seg['Qty'].abs()
+fig = px.scatter(cust_seg, x='Invoices', y='Sales', size='Qty_abs',
+                 color='Customer Category', hover_name='Customer Name',
+                 title="Customer Segmentation — Sales vs Order Frequency (bubble = quantity)",
+                 color_discrete_sequence=px.colors.qualitative.Vivid)
+fig.update_layout(height=420, margin=dict(l=10, r=10, t=40, b=10))
 st.plotly_chart(fig, use_container_width=True)
 
-st.subheader("🔥 Product vs Zone Heatmap")
+# ── Row 9: Credit Notes Analysis ──────────────────────────────────────────────
+st.subheader("⚠️ Credit Notes / Negative Sales Analysis")
+neg = fdf[fdf['Sales value'] < 0].copy()
+c11, c12 = st.columns(2)
 
-pivot = pd.pivot_table(
-    df,
-    values='Sales value',
-    index='Product Category 1',
-    columns='Zone',
-    aggfunc='sum',
-    fill_value=0
-)
+with c11:
+    neg_cust = neg.groupby('Customer Name')['Sales value'].sum().reset_index().sort_values('Sales value')
+    fig = px.bar(neg_cust, x='Sales value', y='Customer Name', orientation='h',
+                 title="Credit Notes by Customer",
+                 color='Sales value', color_continuous_scale='Reds_r')
+    fig.update_layout(height=360, margin=dict(l=10, r=10, t=40, b=10), yaxis_title="", coloraxis_showscale=False)
+    st.plotly_chart(fig, use_container_width=True)
 
-fig = px.imshow(pivot, text_auto=True, aspect="auto", title="Product vs Zone Sales")
+with c12:
+    neg_zone = neg.groupby('Zone')['Sales value'].sum().reset_index()
+    fig = px.pie(neg_zone, names='Zone', values='Sales value',
+                 title="Credit Notes by Zone", hole=0.4,
+                 color_discrete_sequence=px.colors.sequential.Reds_r)
+    fig.update_layout(height=360, margin=dict(l=10, r=10, t=40, b=10))
+    st.plotly_chart(fig, use_container_width=True)
 
-st.plotly_chart(fig, use_container_width=True)
+# ── Row 10: Week-over-Week + Cluster Analysis ─────────────────────────────────
+c13, c14 = st.columns(2)
 
+with c13:
+    weekly = fdf.groupby('Week')['Sales value'].sum().reset_index()
+    fig = px.bar(weekly, x='Week', y='Sales value',
+                 title="📅 Weekly Sales Distribution",
+                 color='Sales value', color_continuous_scale='Blues')
+    fig.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10), coloraxis_showscale=False)
+    st.plotly_chart(fig, use_container_width=True)
 
+with c14:
+    cluster_sales = fdf.groupby('Cluster')['Sales value'].sum().reset_index().sort_values('Sales value', ascending=False).head(15)
+    fig = px.bar(cluster_sales, x='Cluster', y='Sales value',
+                 title="🏙 Top 15 City Clusters by Sales",
+                 color='Sales value', color_continuous_scale='Purples')
+    fig.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10), coloraxis_showscale=False)
+    st.plotly_chart(fig, use_container_width=True)
 
-st.subheader("🎯 Sales Rep Efficiency")
-
-rep_eff = df.groupby('External Sales Representative').agg({
-    'Sales value': 'sum',
-    'Invoice No.': 'count'
-}).reset_index()
-
-fig = px.scatter(
-    rep_eff,
-    x='Invoice No.',
-    y='Sales value',
-    hover_name='External Sales Representative',
-    title="Sales Rep Efficiency"
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-
-
-st.subheader("📈 Monthly Sales Trend")
-monthly_sales = df.groupby(df['Date'].dt.to_period('M'))['Sales value'].sum().reset_index()
-
-# Convert for plotting
-monthly_sales['Month'] = monthly_sales['Date'].astype(str)
-
-fig = px.line(
-    monthly_sales,
-    x='Month',
-    y='Sales value',
-    title="Monthly Sales Trend"
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-st.subheader("🍩 Contribution Analysis")
-df_clean = df.copy()
-
-df_clean['Zone'] = df_clean['Zone'].fillna("Unknown")
-df_clean['Product Category 1'] = df_clean['Product Category 1'].fillna("Unknown")
-
-# Also handle empty strings
-df_clean['Product Category 1'] = df_clean['Product Category 1'].replace("", "Unknown")
-
-fig = px.treemap(
-    df_clean,
-    path=['Zone', 'Product Category 1'],
-    values='Sales value',
-    title="Revenue Contribution by Zone & Product"
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-
-
-
-st.subheader("⚠️ Negative Sales Analysis")
-
-neg = df[df['Sales value'] < 0]
-
-neg_group = neg.groupby('Customer Name')['Sales value'].sum().reset_index()
-
-fig = px.bar(neg_group, x='Customer Name', y='Sales value', color='Sales value')
-
-st.plotly_chart(fig, use_container_width=True)
-
-
-
-
-
-st.subheader("🔁 Customer Retention (Cohort)")
-df['Month'] = df['Date'].dt.strftime('%b %Y')
-
-cohort = df.groupby(['Customer Name', 'Month']).size().reset_index(name='count')
-
-pivot = cohort.pivot(index='Customer Name', columns='Month', values='count').fillna(0)
-
-fig = px.imshow(pivot, aspect="auto", title="Customer Cohort")
-
-st.plotly_chart(fig, use_container_width=True)
-
-
-st.subheader("🧠 Product Basket Analysis")
-
-basket = df.groupby('Customer Name')['Product Category 1'] \
-    .apply(lambda x: ', '.join(sorted(set(x.dropna().astype(str))))) \
-    .reset_index()
-
-st.dataframe(basket)
+# ── Raw Data ──────────────────────────────────────────────────────────────────
+with st.expander("🗃 Raw Data"):
+    st.dataframe(fdf, use_container_width=True)
