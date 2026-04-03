@@ -149,3 +149,156 @@ st.subheader("📌 Top 5 Sales Representatives")
 st.table(top5)
 st.subheader("📌 Bottom 5 Sales Representatives")
 st.table(bottom5)
+
+
+st.subheader("📊 Customer Revenue Concentration (Pareto Analysis)")
+
+customer_sales = df.groupby('Customer Name')['Sales value'].sum().sort_values(ascending=False).reset_index()
+customer_sales['Cumulative %'] = customer_sales['Sales value'].cumsum() / customer_sales['Sales value'].sum() * 100
+
+fig = px.bar(customer_sales, x='Customer Name', y='Sales value', title="Customer Sales")
+
+fig.add_scatter(
+    x=customer_sales['Customer Name'],
+    y=customer_sales['Cumulative %'],
+    mode='lines',
+    name='Cumulative %',
+    yaxis='y2'
+)
+
+fig.update_layout(
+    yaxis2=dict(overlaying='y', side='right', title='Cumulative %')
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+
+st.subheader("🫧 Customer Segmentation")
+
+cust_seg = df.groupby('Customer Name').agg({
+    'Sales value': 'sum',
+    'Quantity': 'sum',
+    'Invoice No.': 'count'
+}).reset_index()
+
+cust_seg['Type'] = cust_seg['Sales value'].apply(lambda x: 'Positive' if x >= 0 else 'Negative')
+
+cust_seg['Quantity_abs'] = cust_seg['Quantity'].abs()
+
+fig = px.scatter(
+    cust_seg,
+    x='Invoice No.',
+    y='Sales value',
+    size='Quantity_abs',
+    color='Type',
+    hover_name='Customer Name',
+    title="Customer Segmentation (Positive vs Negative)"
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+st.subheader("🔥 Product vs Zone Heatmap")
+
+pivot = pd.pivot_table(
+    df,
+    values='Sales value',
+    index='Product Category 1',
+    columns='Zone',
+    aggfunc='sum',
+    fill_value=0
+)
+
+fig = px.imshow(pivot, text_auto=True, aspect="auto", title="Product vs Zone Sales")
+
+st.plotly_chart(fig, use_container_width=True)
+
+
+
+st.subheader("🎯 Sales Rep Efficiency")
+
+rep_eff = df.groupby('External Sales Representative').agg({
+    'Sales value': 'sum',
+    'Invoice No.': 'count'
+}).reset_index()
+
+fig = px.scatter(
+    rep_eff,
+    x='Invoice No.',
+    y='Sales value',
+    hover_name='External Sales Representative',
+    title="Sales Rep Efficiency"
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+
+
+st.subheader("📈 Monthly Sales Trend")
+monthly_sales = df.groupby(df['Date'].dt.to_period('M'))['Sales value'].sum().reset_index()
+
+# Convert for plotting
+monthly_sales['Month'] = monthly_sales['Date'].astype(str)
+
+fig = px.line(
+    monthly_sales,
+    x='Month',
+    y='Sales value',
+    title="Monthly Sales Trend"
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+st.subheader("🍩 Contribution Analysis")
+df_clean = df.copy()
+
+df_clean['Zone'] = df_clean['Zone'].fillna("Unknown")
+df_clean['Product Category 1'] = df_clean['Product Category 1'].fillna("Unknown")
+
+# Also handle empty strings
+df_clean['Product Category 1'] = df_clean['Product Category 1'].replace("", "Unknown")
+
+fig = px.treemap(
+    df_clean,
+    path=['Zone', 'Product Category 1'],
+    values='Sales value',
+    title="Revenue Contribution by Zone & Product"
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+
+
+
+st.subheader("⚠️ Negative Sales Analysis")
+
+neg = df[df['Sales value'] < 0]
+
+neg_group = neg.groupby('Customer Name')['Sales value'].sum().reset_index()
+
+fig = px.bar(neg_group, x='Customer Name', y='Sales value', color='Sales value')
+
+st.plotly_chart(fig, use_container_width=True)
+
+
+
+
+
+st.subheader("🔁 Customer Retention (Cohort)")
+df['Month'] = df['Date'].dt.strftime('%b %Y')
+
+cohort = df.groupby(['Customer Name', 'Month']).size().reset_index(name='count')
+
+pivot = cohort.pivot(index='Customer Name', columns='Month', values='count').fillna(0)
+
+fig = px.imshow(pivot, aspect="auto", title="Customer Cohort")
+
+st.plotly_chart(fig, use_container_width=True)
+
+
+st.subheader("🧠 Product Basket Analysis")
+
+basket = df.groupby('Customer Name')['Product Category 1'] \
+    .apply(lambda x: ', '.join(sorted(set(x.dropna().astype(str))))) \
+    .reset_index()
+
+st.dataframe(basket)
