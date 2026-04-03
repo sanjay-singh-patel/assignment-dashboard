@@ -250,6 +250,62 @@ with c14:
     fig.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10), coloraxis_showscale=False)
     st.plotly_chart(fig, use_container_width=True)
 
+# ── Row 11: Retail Customer Zone Analysis ────────────────────────────────────
+st.subheader("🛒 Retail Customer Analysis by Zone")
+retail_df = fdf[fdf['Customer Category'] == 'Retailer']
+
+c15, c16, c17 = st.columns(3)
+
+with c15:
+    retail_cust = retail_df.groupby('Zone')['Customer Name'].nunique().reset_index()
+    retail_cust.columns = ['Zone', 'Unique Retail Customers']
+    fig = px.bar(retail_cust.sort_values('Unique Retail Customers', ascending=False),
+                 x='Zone', y='Unique Retail Customers', color='Zone',
+                 title="Unique Retail Customers per Zone",
+                 color_discrete_sequence=px.colors.qualitative.Set2,
+                 text='Unique Retail Customers')
+    fig.update_traces(textposition='outside')
+    fig.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10), showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+with c16:
+    retail_rev = retail_df.groupby('Zone')['Sales value'].sum().reset_index()
+    fig = px.bar(retail_rev.sort_values('Sales value', ascending=False),
+                 x='Zone', y='Sales value', color='Zone',
+                 title="Retail Revenue per Zone",
+                 color_discrete_sequence=px.colors.qualitative.Pastel,
+                 text_auto='.2s')
+    fig.update_traces(textposition='outside')
+    fig.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10), showlegend=False, yaxis_title="Sales (₹)")
+    st.plotly_chart(fig, use_container_width=True)
+
+with c17:
+    retail_inv = retail_df.groupby('Zone')['Invoice No.'].nunique().reset_index()
+    retail_inv.columns = ['Zone', 'Invoices']
+    retail_cust2 = retail_df.groupby('Zone')['Customer Name'].nunique().reset_index()
+    retail_cust2.columns = ['Zone', 'Customers']
+    merged = retail_inv.merge(retail_cust2, on='Zone')
+    merged['Avg Invoices/Customer'] = (merged['Invoices'] / merged['Customers']).round(1)
+    fig = px.bar(merged.sort_values('Avg Invoices/Customer', ascending=False),
+                 x='Zone', y='Avg Invoices/Customer', color='Zone',
+                 title="Avg Invoices per Retail Customer",
+                 color_discrete_sequence=px.colors.qualitative.Bold,
+                 text='Avg Invoices/Customer')
+    fig.update_traces(textposition='outside')
+    fig.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10), showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+# Insight callout
+west_retail = retail_df[retail_df['Zone']=='West']['Customer Name'].nunique()
+north_retail = retail_df[retail_df['Zone']=='North']['Customer Name'].nunique()
+north_rev = retail_df[retail_df['Zone']=='North']['Sales value'].sum()
+west_rev = retail_df[retail_df['Zone']=='West']['Sales value'].sum()
+st.info(
+    f"🔍 **Retail Insight:** West Zone has the most retail customers ({west_retail}), but North Zone "
+    f"generates higher retail revenue (₹{north_rev:,.0f} vs ₹{west_rev:,.0f}) with one fewer customer ({north_retail}), "
+    f"indicating North's retail customers have a higher average order value."
+)
+
 # ── Raw Data ──────────────────────────────────────────────────────────────────
 with st.expander("🗃 Raw Data"):
     st.dataframe(fdf, use_container_width=True)
